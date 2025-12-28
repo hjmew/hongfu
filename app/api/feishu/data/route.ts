@@ -70,41 +70,56 @@ const processTableData = (records: TableRecord[]) => {
 // GET请求处理
 export async function GET() {
   try {
-    console.log('[API] Getting feishu data...');
+    // 从飞书API获取表格数据
+    const tableData = await feishuService.getTableRecords();
+    const records = tableData.items;
     
-    // 获取表格记录
-    const recordsResponse = await feishuService.getTableRecords();
-    const records = recordsResponse.items;
-    
-    // 处理数据
+    // 处理表格数据，转换为楼栋-楼层-房号的结构
     const processedData = processTableData(records);
     
-    // 获取楼栋列表
-    const buildings = Object.keys(processedData);
+    // 获取所有楼栋名称
+    const buildings = Object.keys(processedData).sort();
     
-    // 计算统计信息
-    const totalRecords = recordsResponse.total;
-    const lastUpdateTime = records.length > 0 
-      ? Math.max(...records.map(record => record.fields.提交时间))
-      : 0;
+    // 计算统计数据
+    let totalRecords = 0;
+    for (const building in processedData) {
+      for (const floor in processedData[building]) {
+        for (const room in processedData[building][floor]) {
+          totalRecords += processedData[building][floor][room].records.length;
+        }
+      }
+    }
     
-    return NextResponse.json({
+    const result = {
       success: true,
       data: {
         buildings,
         buildingData: processedData,
         stats: {
           totalRecords,
-          lastUpdateTime,
-        },
-      },
-    });
+          lastUpdateTime: Date.now(),
+        }
+      }
+    };
+    
+    return NextResponse.json(result);
   } catch (error) {
-    console.error('[API] Error getting feishu data:', error);
-    console.error('[API] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-    return NextResponse.json(
-      { success: false, error: 'Failed to get feishu data', details: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    console.error('Error fetching data from Feishu API:', error);
+    
+    // 在错误情况下返回空数据结构
+    const errorResponse = {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      data: {
+        buildings: [],
+        buildingData: {},
+        stats: {
+          totalRecords: 0,
+          lastUpdateTime: Date.now(),
+        }
+      }
+    };
+    
+    return NextResponse.json(errorResponse);
   }
 }

@@ -30,6 +30,8 @@ const Home: React.FC = () => {
     setError(null);
     
     try {
+      // 直接调用飞书API，而不是通过内部API路由
+      // 注意：这需要后端API支持CORS或使用代理
       const response = await fetch('/api/feishu/data', {
         cache: 'no-store',
       });
