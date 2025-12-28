@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+dist/
+out/
+
+# Environment variables
+.env.local
+.env.production.local
+.env.development.local
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage directory used by tools like istanbul
+coverage/
+.lib/
+
+# next-i18next
+i18n/*
+
+# Temporary files
+*.tmp
+*.temp
