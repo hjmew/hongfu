@@ -2,10 +2,10 @@ import { CacheData } from '../types';
 
 // 缓存配置
 const CACHE_CONFIG = {
-  // 新鲜缓存：30秒
-  FRESH_CACHE_DURATION: 30 * 1000,
-  // 旧数据缓存：5分钟
-  STALE_CACHE_DURATION: 5 * 60 * 1000,
+  // 新鲜缓存：60秒，减少API请求频率
+  FRESH_CACHE_DURATION: 60 * 1000,
+  // 旧数据缓存：10分钟，提供降级服务
+  STALE_CACHE_DURATION: 10 * 60 * 1000,
 };
 
 // 缓存存储

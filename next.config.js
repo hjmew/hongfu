@@ -8,6 +8,28 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_SUBMIT_URL: process.env.NEXT_PUBLIC_SUBMIT_URL || '',
   },
+  async headers() {
+    return [
+      {
+        // 在所有路由上设置CORS头部
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: '*',
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PUT, DELETE, OPTIONS',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization',
+          },
+        ],
+      },
+    ];
+  },
 }
 
 module.exports = nextConfig

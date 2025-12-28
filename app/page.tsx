@@ -23,6 +23,7 @@ const Home: React.FC = () => {
   const [selectedRecords, setSelectedRecords] = useState<TableRecord[]>([]);
   const [stats, setStats] = useState<DataStats>(initialStats);
   const [error, setError] = useState<string | null>(null);
+  const [hasInitialLoad, setHasInitialLoad] = useState<boolean>(false); // 添加初始加载状态
 
   // 获取数据
   const fetchData = async () => {
@@ -47,6 +48,7 @@ const Home: React.FC = () => {
         if (data.data.buildings.length > 0 && !activeBuilding) {
           setActiveBuilding(data.data.buildings[0]);
         }
+        setHasInitialLoad(true); // 标记已初始加载
       } else {
         setError('获取数据失败');
       }
@@ -58,19 +60,21 @@ const Home: React.FC = () => {
     }
   };
 
-  // 初始加载数据
+  // 初始加载数据 - 只执行一次
   useEffect(() => {
     fetchData();
     
-    // 2秒后重试一次（如果第一次失败）
-    const retryTimer = setTimeout(() => {
-      if (error) {
+    // 设置定期更新（每30秒更新一次），避免频繁刷新
+    const refreshInterval = setInterval(() => {
+      if (hasInitialLoad) { // 只有在初次加载成功后才进行定期更新
         fetchData();
       }
-    }, 2000);
+    }, 30000); // 30秒更新一次
     
-    return () => clearTimeout(retryTimer);
-  }, [error]);
+    return () => {
+      clearInterval(refreshInterval);
+    };
+  }, []); // 空依赖数组，确保只在组件挂载时执行一次
 
   // 处理楼栋切换
   const handleBuildingChange = (building: string) => {

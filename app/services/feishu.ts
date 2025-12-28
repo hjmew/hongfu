@@ -42,52 +42,79 @@ export class FeishuService {
    * @returns Tenant Access Token
    */
   async getTenantAccessToken(): Promise<string> {
-    // 尝试从缓存获取
-    const cachedToken = cacheService.get<string>(CACHE_KEYS.TENANT_ACCESS_TOKEN);
-    if (cachedToken) {
-      return cachedToken;
+    try {
+      // 检查是否可以发送请求（节流机制）
+      if (!this.canMakeRequest('getTenantAccessToken')) {
+        console.log('[FEISHU] Skipping token request due to rate limiting');
+        // 如果无法请求，尝试返回缓存的token，如果没有则抛出错误
+        const cachedToken = cacheService.get<string>(CACHE_KEYS.TENANT_ACCESS_TOKEN);
+        if (cachedToken) {
+          return cachedToken;
+        } else {
+          throw new Error('Rate limited and no cached token available');
+        }
+      }
+
+      // 尝试从缓存获取
+      const cachedToken = cacheService.get<string>(CACHE_KEYS.TENANT_ACCESS_TOKEN);
+      if (cachedToken) {
+        return cachedToken;
+      }
+
+      console.log('[FEISHU] Fetching new tenant_access_token...');
+      const startTime = Date.now();
+
+      const response = await fetch(`${FEISHU_API_BASE_URL}/auth/v3/tenant_access_token/internal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          app_id: this.config.feishuAppId,
+          app_secret: this.config.feishuAppSecret,
+        }),
+      });
+
+      const endTime = Date.now();
+      console.log(`[FEISHU] Fetch tenant_access_token completed in ${endTime - startTime}ms`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}`);
+      }
+
+      const responseText = await response.text();
+      console.log('[FEISHU] Full response for tenant_access_token:', responseText);
+      
+      const data = JSON.parse(responseText);
+      
+      if (data.code !== 0) {
+        throw new Error(`Failed to get tenant_access_token: ${data.msg}, code: ${data.code}`);
+      }
+
+      // 检查响应结构，飞书API可能直接在根级别返回token和expire
+      const tokenData = data.data || data;
+      
+      if (!tokenData.tenant_access_token) {
+        throw new Error(`No tenant_access_token in response, full response: ${responseText}`);
+      }
+
+      // 缓存token，过期时间设置为响应的expire减去15分钟（900秒）的缓冲
+      const token = tokenData.tenant_access_token;
+      const expireInSeconds = Math.max(0, (tokenData.expire || 7200) - 900);
+      
+      cacheService.set(CACHE_KEYS.TENANT_ACCESS_TOKEN, token, true);
+      
+      return token;
+    } catch (error) {
+      console.error('[FEISHU] Error getting tenant access token:', error);
+      // 如果获取新token失败，尝试返回缓存的token
+      const cachedToken = cacheService.get<string>(CACHE_KEYS.TENANT_ACCESS_TOKEN);
+      if (cachedToken) {
+        console.log('[FEISHU] Using cached token after error');
+        return cachedToken;
+      }
+      throw error;
     }
-
-    console.log('[FEISHU] Fetching new tenant_access_token...');
-    const startTime = Date.now();
-
-    const response = await fetch(`${FEISHU_API_BASE_URL}/auth/v3/tenant_access_token/internal`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        app_id: this.config.feishuAppId,
-        app_secret: this.config.feishuAppSecret,
-      }),
-    });
-
-    const endTime = Date.now();
-    console.log(`[FEISHU] Fetch tenant_access_token completed in ${endTime - startTime}ms`);
-
-    const responseText = await response.text();
-    console.log('[FEISHU] Full response for tenant_access_token:', responseText);
-    
-    const data = JSON.parse(responseText);
-    
-    if (data.code !== 0) {
-      throw new Error(`Failed to get tenant_access_token: ${data.msg}, code: ${data.code}`);
-    }
-
-    // 检查响应结构，飞书API可能直接在根级别返回token和expire
-    const tokenData = data.data || data;
-    
-    if (!tokenData.tenant_access_token) {
-      throw new Error(`No tenant_access_token in response, full response: ${responseText}`);
-    }
-
-    // 缓存token，过期时间设置为响应的expire减去15分钟（900秒）的缓冲
-    const token = tokenData.tenant_access_token;
-    const expireInSeconds = Math.max(0, (tokenData.expire || 7200) - 900);
-    
-    cacheService.set(CACHE_KEYS.TENANT_ACCESS_TOKEN, token, true);
-    
-    return token;
   }
 
   /**
@@ -95,46 +122,73 @@ export class FeishuService {
    * @returns 表格字段列表
    */
   async getTableFields(): Promise<TableFieldsResponse> {
-    // 尝试从缓存获取
-    const cachedFields = cacheService.get<TableFieldsResponse>(CACHE_KEYS.TABLE_FIELDS, true);
-    if (cachedFields) {
-      return cachedFields;
-    }
-
-    const token = await this.getTenantAccessToken();
-    
-    console.log('[FEISHU] Fetching table fields...');
-    const startTime = Date.now();
-
-    const response = await fetch(
-      `${FEISHU_API_BASE_URL}/bitable/v1/apps/${this.config.feishuAppToken}/tables/${this.config.feishuTableId}/fields?view_id=${this.config.feishuViewId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        // 禁用Next.js默认缓存
-        cache: 'no-store',
+    try {
+      // 检查是否可以发送请求（节流机制）
+      if (!this.canMakeRequest('getTableFields')) {
+        console.log('[FEISHU] Skipping table fields request due to rate limiting');
+        // 如果无法请求，尝试返回缓存的字段，如果没有则抛出错误
+        const cachedFields = cacheService.get<TableFieldsResponse>(CACHE_KEYS.TABLE_FIELDS, true);
+        if (cachedFields) {
+          return cachedFields;
+        } else {
+          throw new Error('Rate limited and no cached fields available');
+        }
       }
-    );
 
-    const endTime = Date.now();
-    console.log(`[FEISHU] Fetch table fields completed in ${endTime - startTime}ms`);
+      // 尝试从缓存获取
+      const cachedFields = cacheService.get<TableFieldsResponse>(CACHE_KEYS.TABLE_FIELDS, true);
+      if (cachedFields) {
+        return cachedFields;
+      }
 
-    const data = await response.json() as FeishuResponse<TableFieldsResponse>;
-    
-    if (data.code !== 0) {
-      throw new Error(`Failed to get table fields: ${data.msg}`);
+      const token = await this.getTenantAccessToken();
+      
+      console.log('[FEISHU] Fetching table fields...');
+      const startTime = Date.now();
+
+      const response = await fetch(
+        `${FEISHU_API_BASE_URL}/bitable/v1/apps/${this.config.feishuAppToken}/tables/${this.config.feishuTableId}/fields?view_id=${this.config.feishuViewId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          // 禁用Next.js默认缓存
+          cache: 'no-store',
+        }
+      );
+
+      const endTime = Date.now();
+      console.log(`[FEISHU] Fetch table fields completed in ${endTime - startTime}ms`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}`);
+      }
+
+      const data = await response.json() as FeishuResponse<TableFieldsResponse>;
+      
+      if (data.code !== 0) {
+        throw new Error(`Failed to get table fields: ${data.msg}`);
+      }
+
+      if (!data.data) {
+        throw new Error('No data in table fields response');
+      }
+
+      // 设置缓存
+      cacheService.set(CACHE_KEYS.TABLE_FIELDS, data.data, true);
+      
+      return data.data;
+    } catch (error) {
+      console.error('[FEISHU] Error getting table fields:', error);
+      // 如果获取新数据失败，尝试返回缓存的数据
+      const cachedFields = cacheService.get<TableFieldsResponse>(CACHE_KEYS.TABLE_FIELDS, true);
+      if (cachedFields) {
+        console.log('[FEISHU] Using cached fields after error');
+        return cachedFields;
+      }
+      throw error;
     }
-
-    if (!data.data) {
-      throw new Error('No data in table fields response');
-    }
-
-    // 设置缓存
-    cacheService.set(CACHE_KEYS.TABLE_FIELDS, data.data, true);
-    
-    return data.data;
   }
 
   /**
@@ -142,50 +196,96 @@ export class FeishuService {
    * @returns 表格记录列表
    */
   async getTableRecords(): Promise<TableRecordsResponse> {
-    // 尝试从缓存获取
-    const cachedRecords = cacheService.get<TableRecordsResponse>(CACHE_KEYS.TABLE_RECORDS, true);
-    if (cachedRecords) {
-      return cachedRecords;
-    }
-
-    const token = await this.getTenantAccessToken();
-    
-    console.log('[FEISHU] Fetching table records...');
-    const startTime = Date.now();
-
-    const response = await fetch(
-      `${FEISHU_API_BASE_URL}/bitable/v1/apps/${this.config.feishuAppToken}/tables/${this.config.feishuTableId}/records/search?page_size=500`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          view_id: this.config.feishuViewId,
-        }),
-        // 禁用Next.js默认缓存
-        cache: 'no-store',
+    try {
+      // 检查是否可以发送请求（节流机制）
+      if (!this.canMakeRequest('getTableRecords')) {
+        console.log('[FEISHU] Skipping table records request due to rate limiting');
+        // 如果无法请求，尝试返回缓存的记录，如果没有则抛出错误
+        const cachedRecords = cacheService.get<TableRecordsResponse>(CACHE_KEYS.TABLE_RECORDS, true);
+        if (cachedRecords) {
+          return cachedRecords;
+        } else {
+          throw new Error('Rate limited and no cached records available');
+        }
       }
-    );
 
-    const endTime = Date.now();
-    console.log(`[FEISHU] Fetch table records completed in ${endTime - startTime}ms`);
+      // 尝试从缓存获取
+      const cachedRecords = cacheService.get<TableRecordsResponse>(CACHE_KEYS.TABLE_RECORDS, true);
+      if (cachedRecords) {
+        return cachedRecords;
+      }
 
-    const data = await response.json() as FeishuResponse<TableRecordsResponse>;
-    
-    if (data.code !== 0) {
-      throw new Error(`Failed to get table records: ${data.msg}`);
+      const token = await this.getTenantAccessToken();
+      
+      console.log('[FEISHU] Fetching table records...');
+      const startTime = Date.now();
+
+      const response = await fetch(
+        `${FEISHU_API_BASE_URL}/bitable/v1/apps/${this.config.feishuAppToken}/tables/${this.config.feishuTableId}/records/search?page_size=500`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            view_id: this.config.feishuViewId,
+          }),
+          // 禁用Next.js默认缓存
+          cache: 'no-store',
+        }
+      );
+
+      const endTime = Date.now();
+      console.log(`[FEISHU] Fetch table records completed in ${endTime - startTime}ms`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}`);
+      }
+
+      const data = await response.json() as FeishuResponse<TableRecordsResponse>;
+      
+      if (data.code !== 0) {
+        throw new Error(`Failed to get table records: ${data.msg}`);
+      }
+
+      if (!data.data) {
+        throw new Error('No data in table records response');
+      }
+
+      // 设置缓存
+      cacheService.set(CACHE_KEYS.TABLE_RECORDS, data.data, true);
+      
+      return data.data;
+    } catch (error) {
+      console.error('[FEISHU] Error getting table records:', error);
+      // 如果获取新数据失败，尝试返回缓存的数据
+      const cachedRecords = cacheService.get<TableRecordsResponse>(CACHE_KEYS.TABLE_RECORDS, true);
+      if (cachedRecords) {
+        console.log('[FEISHU] Using cached records after error');
+        return cachedRecords;
+      }
+      throw error;
     }
+  }
 
-    if (!data.data) {
-      throw new Error('No data in table records response');
-    }
+  // 添加请求节流机制
+  private requestTimestamps: Map<string, number> = new Map();
+  private readonly MIN_REQUEST_INTERVAL = 5000; // 最小请求间隔5秒
 
-    // 设置缓存
-    cacheService.set(CACHE_KEYS.TABLE_RECORDS, data.data, true);
+  /**
+   * 检查是否可以发送请求（节流机制）
+   */
+  private canMakeRequest(key: string): boolean {
+    const now = Date.now();
+    const lastRequest = this.requestTimestamps.get(key) || 0;
+    const canRequest = now - lastRequest >= this.MIN_REQUEST_INTERVAL;
     
-    return data.data;
+    if (canRequest) {
+      this.requestTimestamps.set(key, now);
+    }
+    
+    return canRequest;
   }
 
   /**
@@ -193,6 +293,12 @@ export class FeishuService {
    */
   async refreshCache(): Promise<void> {
     console.log('[FEISHU] Refreshing cache...');
+    
+    // 检查是否可以发送刷新请求
+    if (!this.canMakeRequest('refreshCache')) {
+      console.log('[FEISHU] Skipping refresh due to rate limiting');
+      return;
+    }
     
     // 清除相关缓存
     cacheService.delete(CACHE_KEYS.TABLE_FIELDS);

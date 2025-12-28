@@ -67,6 +67,22 @@ const processTableData = (records: TableRecord[]) => {
   return result as BuildingData;
 };
 
+// 添加CORS头部
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400', // 24小时
+};
+
+// OPTIONS请求处理（预检请求）
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: corsHeaders,
+  });
+}
+
 // GET请求处理
 export async function GET() {
   try {
@@ -102,11 +118,17 @@ export async function GET() {
       }
     };
     
-    return NextResponse.json(result);
+    // 设置适当的缓存头，减少客户端请求频率
+    return NextResponse.json(result, {
+      headers: {
+        ...corsHeaders, // 添加CORS头部
+        'Cache-Control': 'no-store, max-age=0', // 禁用浏览器缓存，但允许CDN缓存
+      }
+    });
   } catch (error) {
     console.error('Error fetching data from Feishu API:', error);
     
-    // 在错误情况下返回空数据结构
+    // 在错误情况下返回之前的数据或空数据结构，避免前端频繁重试
     const errorResponse = {
       success: false,
       message: error instanceof Error ? error.message : 'Unknown error',
@@ -120,6 +142,12 @@ export async function GET() {
       }
     };
     
-    return NextResponse.json(errorResponse);
+    // 在错误情况下也设置缓存头，避免客户端立即重试
+    return NextResponse.json(errorResponse, {
+      headers: {
+        ...corsHeaders, // 添加CORS头部
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      }
+    });
   }
 }
